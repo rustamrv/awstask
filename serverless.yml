@@ -1,0 +1,17 @@
+service: urlsrestpoint
+
+provider:
+  name: aws
+  runtime: python3.8
+  lambdaHashingVersion: 20201221
+  apiGateway:
+    shouldStartNameWithService: true
+
+functions:
+  main:
+    handler: lambda_rest_point.result_lambda
+    events:
+      - http:
+          path: /point
+          method: POST
+          cors: true
