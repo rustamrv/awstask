@@ -1,69 +1,60 @@
-from urllib import request
 import asyncio
+from urllib import request
 import json
 import time
 import logging
 from urllib.error import URLError
+from datetime import timedelta
 
 
-async def get_urls(events, context):
-    data = json.loads(events['body'])
-    response_data = []
+async def get_urls(url):
     try:
-        urls_ = data['urls']
-    except KeyError:
-        logging.error('Error key urls')
-        response_data = {'message': 'Error key urls'}
-        urls_ = []
-    if isinstance(urls_, list):
-        for url in urls_:
-            try:
-                data_url = request.urlopen(url)
-                start = time.time()
-                page = data_url.read()
-                end = time.time()
-                data_url.close()
-                response_data.append({'website': url,
-                                      'total second': end})
-            except TypeError:
-                response_data.append({
-                    "message": f"Error type {url}"
-                })
-            except URLError:
-                response_data.append({
-                    "message": f"URLError type {url}"
-                })
-    elif isinstance(urls_, str):
-        try:
-            data_url = request.urlopen(urls_)
-            start = time.time()
-            page = data_url.read()
-            end = time.time()
-            data_url.close()
-            response_data = {'website': urls_,
-                             'total second': end}
-        except TypeError:
-            response_data = {
-                "message": f"Error type {urls_}"
-            }
-        except URLError:
-            response_data = {
-                "message": f"URLError type {urls_}"
-            }
+        response = request.urlopen(url)
+        start_time = time.monotonic()
+        data = response.read()
+        end = time.monotonic() - start_time
+        response_data = {'website': url,
+                         'total second': str(timedelta(seconds=end))}
+    except TypeError as error:
+        response_data = {
+            "message": f"Error type {url} - {error} "
+        }
+    except URLError:
+        response_data = {
+            "message": f"URLError type {url}"
+        }
+    return response_data
 
+
+async def main(event):
+    try:
+        data = json.loads(event["body"])
+        urls_ = data["urls"]
+    except TypeError as error:
+        results = {'message': f'Error type urls {error}'}
+        return {
+            "isBase64Encoded": False,
+            "statusCode": 200,
+            "headers": {},
+            "body": json.dumps(results)
+        }
+    if isinstance(urls_, list):
+        futures = [get_urls(url) for url in urls_]
+    elif isinstance(urls_, str):
+        futures = [get_urls(urls_)]
     else:
-        response_data = {'message': f"Error type{urls_}"}
+        futures = []
+    completed, _ = await asyncio.wait(futures)
+    results = [_data.result() for _data in completed]
     return {
         "isBase64Encoded": False,
         "statusCode": 200,
         "headers": {},
-        "body": json.dumps(response_data)
+        "body": json.dumps(results)
     }
 
 
-async def async_result_lambda(events, context):
-    return await asyncio.create_task(get_urls(events, context))
-
-
 def result_lambda(event, context=None):
-    return asyncio.run(async_result_lambda(event, context))
+    event_loop = asyncio.get_event_loop()
+    res = event_loop.run_until_complete(main(event))
+    return res
